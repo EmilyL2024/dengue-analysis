@@ -1,6 +1,6 @@
 ### Code Description:
 
- #### code and results.rmd:
+ #### results and visualization.rmd:
   - This file contains three parts:
     - The first part is where the results of the research are generated into a table with information about training and testing datasets,  
       their sensitivity, specificity, PPV (positive predictive values), NPV (negative predictive values), and AUC (area under the curve) 
