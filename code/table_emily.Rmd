@@ -1,0 +1,1096 @@
+---
+title: "Table_emily"
+author: "Emily Lu"
+date: "2023-04-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(reshape2)
+library(ggpubr)
+```
+
+
+## Making Table
+
+### In-sample Performance
+
+#### LOSO
+
+```{r}
+datasets <- c("Dataset 1", "Dataset 7") #creating a vector for iterating over datasets
+Threshold <- c(0.33, 0.45) #creating a vector of thresholds respectively
+```
+
+```{r}
+## rearrange the data
+data1 <- data.frame("Dataset" = rep("Dataset 1", 5707), "Site" = modelData$SiteNo, "dengue" = modelData$dengue, "Age" = modelData$Age, "WBC" = modelData$WBC, "PLT" = modelData$PLT)
+
+data7 <-  data.frame("Dataset" = rep("Dataset 7", 1485), "Site" = dengue7$Site, "dengue" = dengue7$dengue, "Age" = dengue7$Age, "WBC" = dengue7$WBC, "PLT" = dengue7$PLT)
+
+LOSO <- rbind(data1, data7)
+```
+
+```{r}
+## making data frame to store the data
+loso_result <- data.frame("Dataset" = rep(NA, 2),"Threshold" = rep(NA,2), "Sensitivity" = rep(NA, 2), "Specificity" = rep(NA, 2), "PPV" = rep(NA, 2), "NPV" = rep(NA, 2), "AUC" = rep(NA, 2))
+```
+
+```{r}
+
+for (i in seq(1, length(datasets), by = 1)){
+  
+  data <- LOSO[which(LOSO$Dataset == datasets[i]), ] #extract one dataset a time
+  
+  #store corresponding information into the table
+  loso_result$Dataset[i] <- datasets[i]
+  loso_result$Threshold[i] <- Threshold[i]
+  
+  #creating vector for iteration
+  site <- unique(data$Site)
+  site <- as.factor(site)
+  
+  YHat <-  rep("NA", nrow(data))
+  
+  for(j in site){
+  
+    f <- which(data$Site == j)
+  
+    losoTrain <- data[-f,] #creating train and test data
+    losoTest <- data[f,]
+  
+    bm <- glm(dengue ~ Age + WBC + PLT, data=losoTrain, family=binomial)
+  
+    YHat[f] <- predict(bm, newdata = losoTest, type = "resp") #store the prediction
+  
+  }
+  
+  YHat <- as.numeric(YHat)
+  
+  loso_prob <- ifelse(YHat > Threshold[i], 1, 0)
+  
+  ## preparing for metric calculation
+  true1 <- which(data$dengue == 1)
+  true0 <- which(data$dengue == 0)
+  
+  loso_pred1 <- which(loso_prob == 1)
+  loso_pred0 <- which(loso_prob == 0)
+
+  ntrue1 <- length(true1)
+  ntrue0 <- length(true0)
+  
+  ##store and calculate desired metrics into the table
+  loso_result$Sensitivity[i] <- (length(which(loso_prob[true1] == 1)))/ntrue1
+  loso_result$Specificity[i] <- (length(which(loso_prob[true0] == 0)))/ntrue0
+  loso_result$PPV[i] <- (length(which(data$dengue[loso_pred1] == 1)))/(length(loso_pred1))
+  loso_result$NPV[i] <- (length(which(data$dengue[loso_pred0] == 0)))/(length(loso_pred0))
+    
+  
+  roc <- prediction(YHat, data$dengue)
+  auc <- performance(roc, measure = "auc")
+  loso_result$AUC[i] <- auc@y.values
+  
+}
+```
+
+#### 10-fold cross-validation
+```{r}
+## rearrange the data
+data10 <-  data.frame("Dataset" = rep("Dataset 10", 1552), "dengue" = dengue10$dengue, "Age" = dengue10$Age, "WBC" = dengue10$WBC, "PLT" = dengue10$PLT)
+
+data13_d1 <- data.frame("Dataset" = rep("Dataset 13 Day 1", 257), "dengue" = clean13$dengue, "Age" =  clean13$Age, "WBC" = clean13$wbc_1, "PLT" = clean13$plt_1)
+
+data13_d3 <- data.frame("Dataset" = rep("Dataset 13 Day 3", 257), "dengue" = clean13$dengue, "Age" =  clean13$Age, "WBC" = clean13$wbc_3, "PLT" = clean13$plt_3)
+
+data17 <- data.frame("Dataset" = rep("Dataset 17", 368), "dengue" = dengue17$dengue, "Age" =  dengue17$Age, "WBC" = dengue17$WBC, "PLT" = dengue17$PLT)
+
+cv <- rbind(data10, data13_d1, data13_d3, data17)
+```
+
+```{r}
+datasets <- c("Dataset 10", "Dataset 13 Day 1", "Dataset 13 Day 3", "Dataset 17") #creating a vector for iterating over datasets
+Threshold <- c(0.21, 0.64, 0.59,0.43) #creating a vector of thresholds respectively
+```
+
+```{r}
+## making data frame to store the data
+cv_result <- data.frame("Dataset" = rep(NA, 4),"Threshold" = rep(NA, 4), "Sensitivity" = rep(NA, 4), "Specificity" = rep(NA, 4), "PPV" = rep(NA, 4), "NPV" = rep(NA, 4), "AUC" = rep(NA, 4))
+```
+
+
+```{r}
+set.seed(1) # set seed for reproducibility
+
+for (i in seq(1, length(datasets), by = 1)){
+  
+  data <- cv[which(cv$Dataset == datasets[i]), ] # extract one dataset a time
+  
+  #store corresponding information into the table
+  cv_result$Dataset[i] <- datasets[i] 
+  cv_result$Threshold[i] <- Threshold[i]
+  
+  ## creating folds
+  pool <- rep(1:10, ceiling(nrow(data)/10)) 
+  folds <- sample(pool, nrow(data))
+  
+  YHat <-  rep("NA", nrow(data))
+  
+  for(j in 1:10){
+  
+    f <- which(folds == j)
+  
+    cvTrain <- data[-f,]
+    cvTest <- data[f,]
+  
+    bm <- glm(dengue ~ Age + WBC + PLT, data=cvTrain, family=binomial)
+  
+    YHat[f] <- predict(bm, newdata = cvTest, type = "resp")
+  
+  }
+  
+  YHat <- as.numeric(YHat)
+  
+  cv_prob <- ifelse(YHat > Threshold[i], 1, 0)
+  
+  ## preparing for metric calculation
+  true1 <- which(data$dengue == 1)
+  true0 <- which(data$dengue == 0)
+  
+  cv_pred1 <- which(cv_prob == 1)
+  cv_pred0 <- which(cv_prob == 0)
+
+  ntrue1 <- length(true1)
+  ntrue0 <- length(true0)
+  
+  ##store and calculate desired metrics into the table
+  cv_result$Sensitivity[i] <- (length(which(cv_prob[true1] == 1)))/ntrue1
+  cv_result$Specificity[i] <- (length(which(cv_prob[true0] == 0)))/ntrue0
+  cv_result$PPV[i] <- (length(which(data$dengue[cv_pred1] == 1)))/(length(cv_pred1))
+  cv_result$NPV[i] <- (length(which(data$dengue[cv_pred0] == 0)))/(length(cv_pred0))
+    
+  roc <- prediction(YHat, data$dengue)
+  auc <- performance(roc, measure = "auc")
+  cv_result$AUC[i] <- auc@y.values
+  
+}
+```
+
+```{r}
+## combining all the results into one table
+in_sample <- rbind(loso_result, cv_result)
+in_sample$AUC <- as.numeric(in_sample$AUC)
+```
+
+```{r}
+## round the result for better readability
+in_sample_round3 <- in_sample %>%                  
+                 mutate_if(is.numeric,
+                           round,
+                           digits = 3)
+
+
+## making table
+knitr::kable(in_sample_round3,
+            caption = "In-Sample Performance of Each Dataset")
+```
+
+
+
+## Making Table (Generalization)
+
+```{r}
+## rearrange the data
+data1 <- data.frame("Dataset" = rep("Dataset 1", 5707), "dengue" = modelData$dengue, "Age" = modelData$Age, "WBC" = modelData$WBC, "PLT" = modelData$PLT)
+
+data7 <-  data.frame("Dataset" = rep("Dataset 7", 1485), "dengue" = dengue7$dengue, "Age" = dengue7$Age, "WBC" = dengue7$WBC, "PLT" = dengue7$PLT)
+
+data10 <-  data.frame("Dataset" = rep("Dataset 10", 1552), "dengue" = dengue10$dengue, "Age" = dengue10$Age, "WBC" = dengue10$WBC, "PLT" = dengue10$PLT)
+
+data13_d1 <- data.frame("Dataset" = rep("Dataset 13 Day 1", 257), "dengue" = clean13$dengue, "Age" =  clean13$Age, "WBC" = clean13$wbc_1, "PLT" = clean13$plt_1)
+
+data13_d3 <- data.frame("Dataset" = rep("Dataset 13 Day 3", 257), "dengue" = clean13$dengue, "Age" =  clean13$Age, "WBC" = clean13$wbc_3, "PLT" = clean13$plt_3)
+
+data17 <- data.frame("Dataset" = rep("Dataset 17", 368), "dengue" = dengue17$dengue, "Age" =  dengue17$Age, "WBC" = dengue17$WBC, "PLT" = dengue17$PLT)
+
+data <- rbind(data1, data7, data10, data13_d1, data13_d3, data17)
+```
+
+```{r}
+## create a dataframe to store final results
+Result <- data.frame("Train" = rep(NA, 60), "Test" = rep(NA, 60), "Threshold" = rep(NA, 60), "Sensitivity" = rep(NA, 60), "Specificity" = rep(NA, 60), "PPV" = rep(NA, 60), "NPV" = rep(NA, 60), "AUC" = rep(NA, 60))
+
+## create vectors for iteration
+datasets <- c("Dataset 1", "Dataset 7", "Dataset 10", "Dataset 13 Day 1", "Dataset 13 Day 3", "Dataset 17")
+t <- c(0.33, 0.45, 0.21, 0.71, 0.62,0.43)
+
+Threshold <- data.frame(datasets, t)
+
+m <- 1 # initialize the index parameter
+
+for (i in 1:length(datasets)){
+  Train <- data[which(data$Dataset == datasets[i]), ] # use one dataset as training dataset a time
+  t1 <- Threshold$t[i] # get the threshold
+  
+  ## create new, temporary vectors that only exclude the information of the selected training dataset
+  new_datasets <- datasets[-i]
+  new_t <- Threshold[-i,]
+  
+  for (j in 1:length(new_datasets)){
+    Test <- data[which(data$Dataset == new_datasets[j]),] # extract one dataset as test dataset a time
+    t2 <- new_t$t[j] # get the threshold
+    
+    ## store corresponding information into the table
+    Result$Train[m] <- datasets[i]
+    Result$Test[m] <- new_datasets[j]
+    Result$Threshold[m] <- t1
+    
+    model <- glm(dengue ~ Age + WBC + PLT, data=Train, family=binomial)
+    YHat <- predict(model, newdata = Test, type = "resp")
+    
+    ## preparing for metric calculation
+    prob_t1 <- ifelse(YHat > t1, 1, 0)
+    prob_t2 <- ifelse(YHat > t2, 1, 0)
+
+    pred1_t1 <- length(which(prob_t1 == 1))
+    pred0_t1 <- length(which(prob_t1 == 0))
+
+    True1 <- which(Test$dengue == 1)
+    True0 <- which(Test$dengue == 0)
+
+    nTrue1 <- length(True1)
+    nTrue0 <- length(True0)
+    
+    ## calculate and store the desired metrics using the first threshold (threshold of the training data)
+    Result$Sensitivity[m] <- (length(which(prob_t1[True1] == 1)))/nTrue1
+    Result$Specificity[m] <- (length(which(prob_t1[True0] == 0)))/nTrue0
+    Result$PPV[m] <- (table(prob_t1, Test$dengue)[2,2])/pred1_t1
+    Result$NPV[m] <- (table(prob_t1, Test$dengue)[1,1])/pred0_t1
+    
+    roc <- prediction(YHat, Test$dengue)
+    auc <- performance(roc, measure = "auc")
+    Result$AUC[m] <- auc@y.values
+    
+    m <- m+1 ## updating the index parameter
+    
+    ## preparing for metric calculation
+    pred1_t2 <- length(which(prob_t2 == 1))
+    pred0_t2 <- length(which(prob_t2 == 0))
+    
+    ## calculate and store the desired metrics using the second threshold (threshold of the test data)
+    Result$Train[m] <- datasets[i]
+    Result$Test[m] <- new_datasets[j]
+    Result$Threshold[m] <- t2
+    Result$Sensitivity[m] <- (length(which(prob_t2[True1] == 1)))/nTrue1
+    Result$Specificity[m] <- (length(which(prob_t2[True0] == 0)))/nTrue0
+    Result$PPV[m] <- (table(prob_t2, Test$dengue)[2,2])/pred1_t2
+    Result$NPV[m] <- (table(prob_t2, Test$dengue)[1,1])/pred0_t2
+    
+    roc <- prediction(YHat, Test$dengue)
+    auc <- performance(roc, measure = "auc")
+    Result$AUC[m] <- auc@y.values
+    
+    m <- m+1 # update the index parameter
+    
+  }
+  
+  
+}
+
+Result$AUC <- as.numeric(Result$AUC)
+
+Result <- Result[-c(37:38, 47:48),] # remove the redundant rows
+rownames(Result)[1:56] <- c(1:56) # reorder the rows after removal
+```
+
+
+```{r}
+## round the result for better readability
+Result_round3 <- Result %>%                  
+                 mutate_if(is.numeric,
+                           round,
+                           digits = 3)
+
+## making the table using the dataframe
+knitr::kable(Result_round3,
+            caption = "Comparison of Predictive Performance among Different Datasets")
+```
+
+
+### Making Filtering Age Table
+
+```{r}
+## making substes from data7 and data10
+child7 <- dengue7 %>%
+  filter(dengue7$Age <= 15)
+
+child10 <- dengue10 %>%
+  filter(dengue10$Age <= 15)
+
+adult7 <- dengue7 %>%
+  filter(dengue7$Age >= 17)
+
+adult10 <- dengue10 %>%
+  filter(dengue10$Age >= 17)
+
+## rearrange the data
+child_data7 <- data.frame("Dataset" = rep("Dataset 7", 518), "dengue" = child7$dengue, "Age" = child7$Age, "WBC" = child7$WBC, "PLT" = child7$PLT)
+
+child_data10 <- data.frame("Dataset" = rep("Dataset 10", 571), "dengue" = child10$dengue, "Age" = child10$Age, "WBC" = child10$WBC, "PLT" = child10$PLT)
+
+
+adult_data7 <- data.frame("Dataset" = rep("Dataset 7", 900), "dengue" = adult7$dengue, "Age" = adult7$Age, "WBC" = adult7$WBC, "PLT" = adult7$PLT)
+
+adult_data10 <- data.frame("Dataset" = rep("Dataset 10", 946), "dengue" = adult10$dengue, "Age" = adult10$Age, "WBC" = adult10$WBC, "PLT" = adult10$PLT)
+```
+
+#### Filtering out adults data (children only)
+```{r}
+## making table to store the result
+child <- data.frame("Train" = rep(NA, 12), "Test" = rep(NA, 12), "Threshold" = rep(NA, 12), "Sensitivity" = rep(NA, 12), "Specificity" = rep(NA, 12), "PPV" = rep(NA, 12), "NPV" = rep(NA, 12), "AUC" = rep(NA, 12))
+```
+
+```{r}
+child_data <- rbind(data1, data13_d1, data13_d3)
+
+## making vectors to store the information of dataset and threshold
+datasets <- c("Dataset 1","Dataset 13 Day 1","Dataset 13 Day 3")
+t <- c(0.33,0.71, 0.62)
+c <- c(0.45,0.21)
+
+m <- 1 # initialize the index parameter
+
+for (i in 1:length(datasets)){
+  
+  Train <- child_data[which(child_data$Dataset == datasets[i]), ] # use one dataset as training dataset a time
+  
+  child[m:(m+3), "Train"] <- datasets[i] # store the dataset name in the final table
+  
+  t1 <- t[i] # get the threshold of the training dataset
+  
+  
+  for (j in 1:length(c)){
+    
+    ## extract and store the corresponding information into the final table
+    if (j == 1){
+      Test <- child_data7
+      t2 <- c[j]
+      child[m:(m+1), "Test"] <- "Dataset 7"
+    }
+    else{
+      Test <- child_data10
+      t2 <- c[j]
+      child[m:(m+1), "Test"] <- "Dataset 10"
+    }
+    
+    model <- glm(dengue ~ Age + WBC + PLT, data=Train, family=binomial)
+    YHat <- predict(model, newdata = Test, type = "resp")
+    
+    ## prepare for the metric calculation
+    prob_t1 <- ifelse(YHat > t1, 1, 0)
+    prob_t2 <- ifelse(YHat > t2, 1, 0)
+    
+    pred1_t1 <- length(which(prob_t1 == 1))
+    pred0_t1 <- length(which(prob_t1 == 0))
+
+    True1 <- which(Test$dengue == 1)
+    True0 <- which(Test$dengue == 0)
+
+    nTrue1 <- length(True1)
+    nTrue0 <- length(True0)
+    
+    ## calculate and store the desired metrics using the first threshold (threshold of the training data)
+    child$Threshold[m] <- t1
+    child$Sensitivity[m] <- (length(which(prob_t1[True1] == 1)))/nTrue1
+    child$Specificity[m] <- (length(which(prob_t1[True0] == 0)))/nTrue0
+    child$PPV[m] <- (table(prob_t1, Test$dengue)[2,2])/pred1_t1
+    child$NPV[m] <- (table(prob_t1, Test$dengue)[1,1])/pred0_t1
+    
+    roc <- prediction(YHat, Test$dengue)
+    auc <- performance(roc, measure = "auc")
+    child$AUC[m] <- auc@y.values
+    
+    m <- m+1 # update the index paramter
+    
+    ## prepare for the metric calculation
+    pred1_t2 <- length(which(prob_t2 == 1))
+    pred0_t2 <- length(which(prob_t2 == 0))
+    
+    ## calculate and store the desired metrics using the second threshold (threshold of the test data)
+    child$Threshold[m] <- t2
+    child$Sensitivity[m] <- (length(which(prob_t2[True1] == 1)))/nTrue1
+    child$Specificity[m] <- (length(which(prob_t2[True0] == 0)))/nTrue0
+    child$PPV[m] <- (table(prob_t2, Test$dengue)[2,2])/pred1_t2
+    child$NPV[m] <- (table(prob_t2, Test$dengue)[1,1])/pred0_t2
+    
+    roc <- prediction(YHat, Test$dengue)
+    auc <- performance(roc, measure = "auc")
+    child$AUC[m] <- auc@y.values
+    
+    m <- m+1 # update the index paramter
+    
+  }
+  
+  
+}
+
+child$AUC <- as.numeric(child$AUC)
+```
+
+
+#### Filtering out adult data (adult only)
+```{r}
+## create a dataframe to store the result
+adult <- data.frame("Train" = rep(NA, 12), "Test" = rep(NA, 12), "Threshold" = rep(NA, 12), "Sensitivity" = rep(NA, 12), "Specificity" = rep(NA, 12), "PPV" = rep(NA, 12), "NPV" = rep(NA, 12), "AUC" = rep(NA, 12))
+```
+
+```{r}
+adult_data <- rbind(adult_data7, adult_data10, data17)
+
+## making vectors to store the information of dataset and threshold
+datasets <- c("Dataset 7", "Dataset 10", "Dataset 17")
+t <- c(0.45,0.21,0.43)
+
+m <- 1 ## initialize index parameter
+
+for (i in 1:length(datasets)){
+  
+  Train <- adult_data[which(adult_data$Dataset == datasets[i]), ] # use one dataset as training dataset a time
+  t1 <- t[i] # get the threshold for the training dataset
+  
+  ## create new, temporary vectors that only exclude the information of the selected training dataset
+  new_datasets <- datasets[-i]
+  new_t <- t[-i]
+  
+  for (j in 1:length(new_datasets)){
+    Test <- adult_data[which(adult_data$Dataset == new_datasets[j]),] # extract one dataset as test dataset
+    t2 <- new_t[j] # get the threshold for the test dataset
+    
+    ## store the corresponding information into the table
+    adult$Train[m] <- datasets[i]
+    adult$Test[m] <- new_datasets[j]
+    adult$Threshold[m] <- t1
+    
+    model <- glm(dengue ~ Age + WBC + PLT, data=Train, family=binomial)
+    YHat <- predict(model, newdata = Test, type = "resp")
+    
+    ## prepare for metric calculation
+    prob_t1 <- ifelse(YHat > t1, 1, 0)
+    prob_t2 <- ifelse(YHat > t2, 1, 0)
+
+    pred1_t1 <- length(which(prob_t1 == 1))
+    pred0_t1 <- length(which(prob_t1 == 0))
+
+    True1 <- which(Test$dengue == 1)
+    True0 <- which(Test$dengue == 0)
+
+    nTrue1 <- length(True1)
+    nTrue0 <- length(True0)
+    
+    ## store and calculate the desired metrics
+    adult$Sensitivity[m] <- (length(which(prob_t1[True1] == 1)))/nTrue1
+    adult$Specificity[m] <- (length(which(prob_t1[True0] == 0)))/nTrue0
+    adult$PPV[m] <- (table(prob_t1, Test$dengue)[2,2])/pred1_t1
+    adult$NPV[m] <- (table(prob_t1, Test$dengue)[1,1])/pred0_t1
+    
+    roc <- prediction(YHat, Test$dengue)
+    auc <- performance(roc, measure = "auc")
+    adult$AUC[m] <- auc@y.values
+    
+    m <- m+1 # update the index parameter
+    
+    ## prepare for metric calculation
+    pred1_t2 <- length(which(prob_t2 == 1))
+    pred0_t2 <- length(which(prob_t2 == 0))
+    
+    ## store and calculate the desired metrics
+    adult$Train[m] <- datasets[i]
+    adult$Test[m] <- new_datasets[j]
+    adult$Threshold[m] <- t2
+    adult$Sensitivity[m] <- (length(which(prob_t2[True1] == 1)))/nTrue1
+    adult$Specificity[m] <- (length(which(prob_t2[True0] == 0)))/nTrue0
+    adult$PPV[m] <- (table(prob_t2, Test$dengue)[2,2])/pred1_t2
+    adult$NPV[m] <- (table(prob_t2, Test$dengue)[1,1])/pred0_t2
+    
+    roc <- prediction(YHat, Test$dengue)
+    auc <- performance(roc, measure = "auc")
+    adult$AUC[m] <- auc@y.values
+    
+    m <- m+1 # update the index parameter
+    
+    
+  }
+  
+  
+}
+  
+
+adult <- adult[-c(1:8),] # remove the redundant rows
+rownames(adult)[1:nrow(adult)] <- c(1:nrow(adult)) # reorder the rownames
+```
+
+```{r}
+## combine the results into one dataframe
+Filter <- rbind(child,adult)
+Filter <- as.data.frame(Filter)
+Filter$AUC <- as.numeric(Filter$AUC)
+rownames(Filter)[1:nrow(Filter)] <- c(1:nrow(Filter)) # reorder the rownames
+```
+
+
+
+```{r}
+## round the result for better readability
+Filter_round3 <- Filter %>%                  
+                 mutate_if(is.numeric,
+                           round,
+                           digits = 3)
+
+## making table
+knitr::kable(Filter_round3,
+            caption = "Comparison of Predictive Performance among Different Datasets, controlling age")
+```
+
+
+## Making plot
+```{r}
+## create a dataframe for sotring the information needed for plotting
+plot <- data.frame("Train" = rep(NA, 28), "Test" = rep(NA, 28), "Threshold" = rep(NA, 28), "Sensitivity" = rep(NA, 28), "Specificity" = rep(NA, 28), "PPV" = rep(NA, 28), "NPV" = rep(NA, 28), "AUC" = rep(NA, 28))
+
+## extract the information from the in-sample performance table
+for (i in seq(1, nrow(Result), by = 2)){
+  
+  for(j in seq(1, ncol(Result), by = 1)){
+    plot[i,j] <- Result[i,j]
+  }
+}
+```
+
+```{r}
+plot_AUC$Train <- as.factor(plot_AUC$Train)
+```
+
+### Making plot for each dataset's generalizing performance separately (AUC comparison plot)
+```{r}
+plot_Train1 <- plot_AUC[which(plot_AUC$Train == "Dataset 1"),] # extract the information
+
+## order the test dataset in ascending order
+plot_Train1$Test <- factor(plot_Train1$Test, levels = plot_Train1$Test) 
+t1 <- plot_Train1 %>%
+  ggplot(aes(x = Test, y = AUC, color =Test, group = 1)) +
+  geom_point(cex = 3.5) + geom_line(color = "black") +
+  labs(x = "Test Datasets" , y = "AUC values (Trained on Dataset 1)")
+
+t1
+```
+
+
+
+```{r}
+plot_Train7 <- plot_AUC[which(plot_AUC$Train == "Dataset 7"),]
+plot_Train7$Test <- factor(plot_Train7$Test, levels = plot_Train7$Test)
+t7 <- plot_Train7 %>%
+  ggplot(aes(x = Test, y = AUC, color =Test, group = 1)) +
+  geom_point(cex = 3.5) + geom_line(color = "black") +
+  labs(x = "Test Datasets" , y = "AUC values (Trained on Dataset 7)")
+
+t7
+```
+
+```{r}
+plot_Train10 <- plot_AUC[which(plot_AUC$Train == "Dataset 10"),]
+plot_Train10$Test <- factor(plot_Train10$Test, levels = plot_Train10$Test)
+t10 <- plot_Train10 %>%
+  ggplot(aes(x = Test, y = AUC, color =Test, group = 1)) +
+  geom_point(cex = 3.5) + geom_line(color = "black") + 
+  labs(x = "Test Datasets" , y = "AUC values (Trained on Dataset 10)")
+
+t10
+```
+
+```{r}
+plot_Train13_d1 <- plot_AUC[which(plot_AUC$Train == "Dataset 13 Day 1"),]
+plot_Train13_d1$Test <- factor(plot_Train13_d1$Test, levels = plot_Train13_d1$Test)
+td1 <- plot_Train13_d1 %>%
+  ggplot(aes(x = Test, y = AUC, color =Test, group = 1)) +
+  geom_point(cex = 3.5) + geom_line(color = "black") +
+  labs(x = "Test Datasets" , y = "AUC values (Trained on Dataset 13 (Day 1))")
+
+td1
+```
+
+```{r}
+plot_Train13_d3 <- plot_AUC[which(plot_AUC$Train == "Dataset 13 Day 3"),]
+plot_Train13_d3$Test <- factor(plot_Train13_d3$Test, levels = plot_Train13_d3$Test)
+td3 <- plot_Train13_d3 %>%
+  ggplot(aes(x = Test, y = AUC, color =Test, group = 1)) +
+  geom_point(cex = 3.5) + geom_line(color = "black") +
+  labs(x = "Test Datasets" , y = "AUC values (Trained on Dataset 13 (Day 3))")
+
+td3 
+```
+
+```{r}
+plot_Train17 <- plot_AUC[which(plot_AUC$Train == "Dataset 17"),]
+plot_Train17$Test <- factor(plot_Train17$Test, levels = plot_Train17$Test)
+t17 <- plot_Train17 %>%
+  ggplot(aes(x = Test, y = AUC, color =Test, group = 1)) +
+  geom_point(cex = 3.5) + geom_line(color = "black") + 
+  labs(x = "Test Datasets" , y = "AUC values (Trained on Dataset 17)")
+
+t17
+```
+
+
+```{r}
+## combining the plot made above into one graph
+result_AUC <- ggarrange(t1, t7, t10, td1, td3, t17,
+                    ncol = 2, nrow = 3)
+
+result_AUC
+```
+
+
+
+## Plot for Filtered Data
+
+```{r}
+## create a dataframe to store the required information to make the plot
+filter<- data.frame("Train" = rep(NA, 12), "Test" = rep(NA, 12), "Threshold" = rep(NA, 12), "Sensitivity" = rep(NA, 12), "Specificity" = rep(NA, 12), "PPV" = rep(NA, 12), "NPV" = rep(NA, 12), "AUC" = rep(NA, 12))
+
+## extract the information from the table
+for (i in seq(1, nrow(Filter))){
+  
+  for(j in seq(1, ncol(Filter), by = 1)){
+   filter[i,j] <- Filter[i,j]
+  }
+}
+
+filter_AUC <- drop_na(filter)
+```
+
+### Childen Subsets:
+
+#### Train on Dataset 1
+```{r}
+## get the information for the plot we want to make
+filter1_33 <- which(Filter$Train == "Dataset 1" & Filter$Threshold == 0.33)
+filtered_data1_33 <- Filter[filter1_33,]
+filtered_data1_33$Category = rep("Filtered", 2)
+filtered_data1_33 <- filtered_data1_33[,-c(1,3,6,7)] ## remove the columns that are not relevant to the plot
+
+result1_33 <- which(Result$Train == "Dataset 1" & Result$Threshold == 0.33 & (Result$Test == "Dataset 7" | Result$Test == "Dataset 10"))
+unfiltered_data1_33 <- Result[result1_33 ,]
+unfiltered_data1_33$Category = rep("Unfiltered", 2)
+unfiltered_data1_33 <- unfiltered_data1_33[,-c(1,3,6,7)]
+
+all_data1_33 <- rbind(filtered_data1_33, unfiltered_data1_33)
+
+# reshape data for ggplot
+melted1_33 <- melt(all_data1_33, id.vars = c("Test", "Category"))
+
+## to plot the data in order
+cat_order <- c("Unfiltered", "Filtered")
+test_order <- c("Dataset 7", "Dataset 10")
+ordered_metlted1_33 <- melted1_33 %>% 
+  arrange(match(Category, cat_order), match(Test, test_order))
+ordered_metlted1_33$Category <- factor(ordered_metlted1_33$Category, levels = c("Unfiltered", "Filtered"))
+ordered_metlted1_33$Test <- factor(ordered_metlted1_33$Test, levels = c("Dataset 7", "Dataset 10"))
+
+## plot using ggplot
+## color choice are to be changed
+f1_33 <- ggplot(ordered_metlted1_33, aes(x = Category, y = value, color = variable, group = variable)) +
+  geom_line() +
+  facet_wrap(~Test,  ncol=2) +
+  scale_color_manual(values = c("Sensitivity" = "blue", "Specificity" = "purple", "AUC" = "red")) +
+  labs(x = "Train: Dataset 1 (Threshold = 0.33)", y = "Value", color = "Metric") 
+
+f1_33 
+```
+
+```{r}
+## get the information for the plot we want to make
+filter1_other <- which(Filter$Train == "Dataset 1" & Filter$Threshold != 0.33)
+filtered_data1_other <- Filter[filter1_other,]
+filtered_data1_other$Category = rep("Filtered", 2)
+filtered_data1_other <- filtered_data1_other[,-c(1,3,6,7)] ## remove the columns that are not relevant to the plot
+
+result1_other <- which(Result$Train == "Dataset 1" & Result$Threshold != 0.33 & (Result$Test == "Dataset 7" | Result$Test == "Dataset 10"))
+unfiltered_data1_other <- Result[result1_other,]
+unfiltered_data1_other$Category = rep("Unfiltered", 2)
+unfiltered_data1_other <- unfiltered_data1_other[,-c(1,3,6,7)]
+
+all_data1_other <- rbind(filtered_data1_other, unfiltered_data1_other)
+
+# reshape data for ggplot
+melted1_other <- melt(all_data1_other, id.vars = c("Test", "Category"))
+
+## to plot the data in order
+cat_order <- c("Unfiltered", "Filtered")
+test_order <- c("Dataset 7", "Dataset 10")
+ordered_metlted1_other <- melted1_other  %>% 
+  arrange(match(Category, cat_order), match(Test, test_order))
+ordered_metlted1_other$Category <- factor(ordered_metlted1_other$Category, levels = c("Unfiltered", "Filtered"))
+ordered_metlted1_other$Test <- factor(ordered_metlted1_other$Test, levels = c("Dataset 7", "Dataset 10"))
+
+## plot using ggplot
+## color choice are to be changed
+f1_other <- ggplot(ordered_metlted1_other, aes(x = Category, y = value, color = variable, group = variable)) +
+  geom_line() +
+  facet_wrap(~Test,  ncol=2) +
+  scale_color_manual(values = c("Sensitivity" = "blue", "Specificity" = "purple", "AUC" = "red")) +
+  labs(x = "Train: Dataset 1 (Threshold = 0.45, Threshold = 0.21)", y = "Value", color = "Metric") 
+
+f1_other
+```
+
+
+## Train on Day 1
+```{r}
+## get the information for the plot we want to make
+filterdD1_71 <- which(Filter$Train == "Dataset 13 Day 1" & Filter$Threshold == 0.71)
+filtered_dataD1_71 <- Filter[filterdD1_71,]
+filtered_dataD1_71$Category = rep("Filtered", 2)
+filtered_dataD1_71 <- filtered_dataD1_71[,-c(1,3,6,7)] ## remove the columns that are not relevant to the plot
+
+resultD1_71 <- which(Result$Train == "Dataset 13 Day 1" & Result$Threshold == 0.71 & (Result$Test == "Dataset 7" | Result$Test == "Dataset 10"))
+unfiltered_dataD1_71 <- Result[resultD1_71,]
+unfiltered_dataD1_71$Category = rep("Unfiltered", 2)
+unfiltered_dataD1_71 <- unfiltered_dataD1_71[,-c(1,3,6,7)]
+
+all_dataD1_71 <- rbind(filtered_dataD1_71, unfiltered_dataD1_71)
+
+# reshape data for ggplot
+meltedD1_71 <- melt(all_dataD1_71, id.vars = c("Test", "Category"))
+
+## to plot the data in order
+cat_order <- c("Unfiltered", "Filtered")
+test_order <- c("Dataset 7", "Dataset 10")
+ordered_meltedD1_71  <-meltedD1_71  %>% 
+  arrange(match(Category, cat_order), match(Test, test_order))
+ordered_meltedD1_71 $Category <- factor(ordered_meltedD1_71 $Category, levels = c("Unfiltered", "Filtered"))
+ordered_meltedD1_71 $Test <- factor(ordered_meltedD1_71 $Test, levels = c("Dataset 7", "Dataset 10"))
+
+## plot using ggplot
+## color choice are to be changed
+fd1_71 <- ggplot(ordered_meltedD1_71 , aes(x = Category, y = value, color = variable, group = variable)) +
+  geom_line() +
+  facet_wrap(~Test,  ncol=2) +
+  scale_color_manual(values = c("Sensitivity" = "blue", "Specificity" = "purple", "AUC" = "red")) +
+  labs(x = "Train: Dataset 13 Day 1 (Threshold = 0.71)", y = "Value", color = "Metric") 
+
+fd1_71
+```
+
+
+
+```{r}
+## get the information for the plot we want to make
+filterD1_other <- which(Filter$Train == "Dataset 13 Day 1" & Filter$Threshold != 0.71)
+filtered_dataD1_other <- Filter[filterD1_other,]
+filtered_dataD1_other$Category = rep("Filtered", 2)
+filtered_dataD1_other <- filtered_dataD1_other[,-c(1,3,6,7)] ## remove the columns that are not relevant to the plot
+
+resultD1_other <- which(Result$Train == "Dataset 13 Day 1" & Result$Threshold != 0.71 & (Result$Test == "Dataset 7" | Result$Test == "Dataset 10"))
+unfiltered_dataD1_other <- Result[resultD1_other,]
+unfiltered_dataD1_other$Category = rep("Unfiltered", 2)
+unfiltered_dataD1_other <- unfiltered_dataD1_other[,-c(1,3,6,7)]
+
+
+all_dataD1_other <- rbind(filtered_dataD1_other, unfiltered_dataD1_other)
+
+# reshape data for ggplot
+meltedD1_other <- melt(all_dataD1_other, id.vars = c("Test", "Category"))
+
+## to plot the data in order
+cat_order <- c("Unfiltered", "Filtered")
+test_order <- c("Dataset 7", "Dataset 10")
+ordered_meltedD1_other <- meltedD1_other  %>% 
+  arrange(match(Category, cat_order), match(Test, test_order))
+ordered_meltedD1_other$Category <- factor(ordered_meltedD1_other$Category, levels = c("Unfiltered", "Filtered"))
+ordered_meltedD1_other$Test <- factor(ordered_meltedD1_other$Test, levels = c("Dataset 7", "Dataset 10"))
+
+## plot using ggplot
+## color choice are to be changed
+fd1_other <- ggplot(ordered_meltedD1_other, aes(x = Category, y = value, color = variable, group = variable)) +
+  geom_line() +
+  facet_wrap(~Test,  ncol=2) +
+  scale_color_manual(values = c("Sensitivity" = "blue", "Specificity" = "purple", "AUC" = "red")) +
+  labs(x = "Train: Dataset 13 Day 1 (Threshold = 0.45, Threshold = 0.21)", y = "Value", color = "Metric") 
+
+fd1_other
+```
+
+
+## Train on Day 3
+```{r}
+## get the information for the plot we want to make
+filterdD3_62 <- which(Filter$Train == "Dataset 13 Day 3" & Filter$Threshold == 0.62)
+filtered_dataD3_62 <- Filter[filterdD3_62,]
+filtered_dataD3_62$Category = rep("Filtered", 2)
+filtered_dataD3_62 <- filtered_dataD3_62[,-c(1,3,6,7)] ## remove the columns that are not relevant to the plot
+
+resultD3_62 <- which(Result$Train == "Dataset 13 Day 3" & Result$Threshold == 0.62 & (Result$Test == "Dataset 7" | Result$Test == "Dataset 10"))
+unfiltered_dataD3_62 <- Result[resultD3_62,]
+unfiltered_dataD3_62$Category = rep("Unfiltered", 2)
+unfiltered_dataD3_62 <- unfiltered_dataD3_62[,-c(1,3,6,7)]
+
+all_dataD3_62 <- rbind(filtered_dataD3_62, unfiltered_dataD3_62)
+
+# reshape data for ggplot
+meltedD3_62 <- melt(all_dataD3_62, id.vars = c("Test", "Category"))
+
+## to plot the data in order
+cat_order <- c("Unfiltered", "Filtered")
+test_order <- c("Dataset 7", "Dataset 10")
+ordered_meltedD3_62  <-meltedD3_62  %>% 
+  arrange(match(Category, cat_order), match(Test, test_order))
+ordered_meltedD3_62$Category <- factor(ordered_meltedD3_62 $Category, levels = c("Unfiltered", "Filtered"))
+ordered_meltedD3_62$Test <- factor(ordered_meltedD3_62 $Test, levels = c("Dataset 7", "Dataset 10"))
+
+## plot using ggplot
+## color choice are to be changed
+fd3_62 <- ggplot(ordered_meltedD3_62 , aes(x = Category, y = value, color = variable, group = variable)) +
+  geom_line() +
+  facet_wrap(~Test,  ncol=2) +
+  scale_color_manual(values = c("Sensitivity" = "blue", "Specificity" = "purple", "AUC" = "red")) +
+  labs(x = "Train: Dataset 13 Day 3 (Threshold = 0.62)", y = "Value", color = "Metric") 
+
+fd3_62
+```
+
+
+
+```{r}
+## get the information for the plot we want to make
+filterdD3_other <- which(Filter$Train == "Dataset 13 Day 3" & Filter$Threshold != 0.62)
+filtered_dataD3_other <- Filter[filterdD3_other,]
+filtered_dataD3_other$Category = rep("Filtered", 2)
+filtered_dataD3_other <- filtered_dataD3_other[,-c(1,3,6,7)] ## remove the columns that are not relevant to the plot
+
+resultD3_other <- which(Result$Train == "Dataset 13 Day 3" & Result$Threshold != 0.62 & (Result$Test == "Dataset 7" | Result$Test == "Dataset 10"))
+unfiltered_dataD3_other <- Result[resultD3_other,]
+unfiltered_dataD3_other$Category = rep("Unfiltered", 2)
+unfiltered_dataD3_other <- unfiltered_dataD3_other[,-c(1,3,6,7)]
+
+all_dataD3_other <- rbind(filtered_dataD3_other, unfiltered_dataD3_other)
+
+# reshape data for ggplot
+meltedD3_other <- melt(all_dataD3_other, id.vars = c("Test", "Category"))
+
+## to plot the data in order
+cat_order <- c("Unfiltered", "Filtered")
+test_order <- c("Dataset 7", "Dataset 10")
+ordered_meltedD3_other  <-meltedD3_other  %>% 
+  arrange(match(Category, cat_order), match(Test, test_order))
+ordered_meltedD3_other $Category <- factor(ordered_meltedD3_other $Category, levels = c("Unfiltered", "Filtered"))
+ordered_meltedD3_other $Test <- factor(ordered_meltedD3_other $Test, levels = c("Dataset 7", "Dataset 10"))
+
+## plot using ggplot
+## color choice are to be changed
+fd3_other <- ggplot(ordered_meltedD3_other , aes(x = Category, y = value, color = variable, group = variable)) +
+  geom_line() +
+  facet_wrap(~Test,  ncol=2) +
+  scale_color_manual(values = c("Sensitivity" = "blue", "Specificity" = "purple", "AUC" = "red")) +
+  labs(x = "Train: Dataset 13 Day 3 (Threshold = 0.45, Threshold = 0.21)", y = "Value", color = "Metric") 
+
+fd3_other
+```
+
+
+```{r}
+## combining the plots made above into one graph
+filter_child <- ggarrange(f1_33, f1_other, fd1_71,fd1_other, fd3_62, fd3_other,
+                    ncol = 2, nrow = 3)
+
+filter_child
+```
+
+
+
+```{r}
+## get the information for the plot we want to make
+filterd17 <- which(Filter$Train == "Dataset 17" & Filter$Threshold == 0.43)
+filtered_data17 <- Filter[filterd17,]
+filtered_data17$Category = rep("Filtered", 2)
+filtered_data17 <- filtered_data17[,-c(1,3,6,7)] 
+
+result17 <- which(Result$Train == "Dataset 17" & Result$Threshold == 0.43 & (Result$Test == "Dataset 7" | Result$Test == "Dataset 10"))
+unfiltered_data17 <- Result[result17,]
+unfiltered_data17$Category = rep("Unfiltered", 2)
+unfiltered_data17 <- unfiltered_data17[,-c(1,3,6,7)]
+
+all_data17 <- rbind(filtered_data17, unfiltered_data17)
+
+# reshape data for ggplot
+melted17 <- melt(all_data17, id.vars = c("Test", "Category"))
+
+## to plot the data in order
+cat_order <- c("Unfiltered", "Filtered")
+test_order <- c("Dataset 7", "Dataset 10")
+ordered_melted17 <-melted17  %>% 
+  arrange(match(Category, cat_order), match(Test, test_order))
+ordered_melted17$Category <- factor(ordered_melted17$Category, levels = c("Unfiltered", "Filtered"))
+ordered_melted17$Test <- factor(ordered_melted17$Test, levels = c("Dataset 7", "Dataset 10"))
+
+## plot using ggplot
+## color choice are to be changed
+f17 <- ggplot(ordered_melted17 , aes(x = Category, y = value, color = variable, group = variable)) +
+  geom_line() +
+  facet_wrap(~Test,  ncol=2) +
+  scale_color_manual(values = c("Sensitivity" = "blue", "Specificity" = "purple", "AUC" = "red")) +
+  labs(x = "Train: Dataset 13 Day 1 (Threshold = 0.71)", y = "Value", color = "Metric") 
+
+f17
+```
+
+
+## Summary Table
+```{r}
+## pacakge needed for making table
+install.packages("arsenal")
+library(arsenal)
+```
+
+```{r}
+## rearrange the data
+data1 <- data.frame("Dataset" = rep("Dataset 1", 5707), "dengue" = modelData$dengue, "Age" = modelData$Age, "WBC" = modelData$WBC, "PLT" = modelData$PLT)
+
+data7 <-  data.frame("Dataset" = rep("Dataset 7", 1485), "dengue" = dengue7$dengue, "Age" = dengue7$Age, "WBC" = dengue7$WBC, "PLT" = dengue7$PLT)
+
+data10 <-  data.frame("Dataset" = rep("Dataset 10", 1552), "dengue" = dengue10$dengue, "Age" = dengue10$Age, "WBC" = dengue10$WBC, "PLT" = dengue10$PLT)
+
+data13_d1 <- data.frame("Dataset" = rep("Dataset 13 Day 1", 257), "dengue" = clean13$dengue, "Age" =  clean13$Age, "WBC" = clean13$wbc_1, "PLT" = clean13$plt_1)
+
+data13_d3 <- data.frame("Dataset" = rep("Dataset 13 Day 3", 257), "dengue" = clean13$dengue, "Age" =  clean13$Age, "WBC" = clean13$wbc_3, "PLT" = clean13$plt_3)
+
+data17 <- data.frame("Dataset" = rep("Dataset 17", 368), "dengue" = dengue17$dengue, "Age" =  dengue17$Age, "WBC" = dengue17$WBC, "PLT" = dengue17$PLT)
+
+data <- rbind(data1, data7, data10, data13_d1, data13_d3, data17)
+```
+
+```{r}
+## create another dataset to make the table
+test <- data
+test$dengue <-as.factor(test$dengue)
+```
+
+```{r}
+## rename datasets
+for (i in seq(1,nrow(data), by=1)){
+  if (test$Dataset[i] == "Dataset 7"){
+    test$Dataset[i] = "Dataset 2"
+  }
+  if (test$Dataset[i] == "Dataset 10"){
+    test$Dataset[i] = "Dataset 3"
+  }
+  if (test$Dataset[i] == "Dataset 13 Day 1"){
+    test$Dataset[i] = "Dataset 4 Day 1"
+  }
+  if (test$Dataset[i] == "Dataset 13 Day 3"){
+    test$Dataset[i] = "Dataset 4 Day 3"
+  }
+  if (test$Dataset[i] == "Dataset 17"){
+    test$Dataset[i] = "Dataset 5"
+  }
+}
+```
+
+
+```{r}
+## making table
+sum_table <- tableby(Dataset~ ., data = test) 
+summary(sum_table, title = "Summary Statistics")
+```
+
+```{r}
+## customizing the statistics to include in the table
+controls <- tableby.control(
+  test=FALSE, 
+  total=FALSE,
+  numeric.stats = c("meansd", "medianq1q3", "range"),
+  stats.labels = list(
+    meansd = "Mean (SD)",
+    medianq1q3 = "Median",
+    range = "Range"
+  ),
+  digits = 3
+)
+
+## customize the label of the table
+labels <- list(
+  dengue = "Dengue",
+  Age = "Age",
+  WBC = "White Blood Cell Count (WBC)",
+  PLT = "Platelet Count (PLT)"
+)
+```
+
+
+```{r}
+## making the customized table
+sum_two <- tableby(Dataset ~ .,
+  data = test,
+  control = controls
+)
+
+summary(sum_two,
+  labelTranslations = labels,
+  title = "Summary Statistic of All Datasets"
+)
+```
+
+
+```{r}
+## transforming it into a table
+knitr::kable(summary(sum_two,
+  labelTranslations = labels,
+  title = "Summary Statistic of All Datasets",
+  digits = 3
+))
+```
+
+
+
+```{r}
+## transform into dataframe for export (if needed)
+df1 <- summary(sum_two,
+  labelTranslations = labels,
+  title = "Summary Statistic of All Datasets"
+)
+
+df_sum <- as.data.frame(df1)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
