@@ -6,7 +6,7 @@
 
 
 
-### Citation for Data Sources #### (order corresponds to the datasets in the folder):
+### Citation for Data Sources (order corresponds to the datasets in the folder):
 
   1. Tuan, N. M., Nhan, H. T., Chau, N. V. V., Hung, N. T., Tuan, H. M., Tram, T. V., Ha, N. L. D., Loi, P., Quang, H. K., Kien, D. T. H.,    Hubbard, S., Chau, T. N. B., Wills, B., Wolbers, M., & Simmons, C. P. (2015). Sensitivity and specificity of a novel classifier for the     early diagnosis of dengue. PLOS Neglected Tropical Diseases, 9(4), e0003638. https://doi.org/10.1371/journal.pntd.0003638
 
