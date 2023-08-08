@@ -1,4 +1,10 @@
 ### Code Description:
+ 
+ #### data_cleaning.R:
+  - This file contains all the steps needed to modify the datasets so that they are suitable for building the model, including but not 
+    limited to removing the NA values, converting response variables into a binary variable with values of 1 and 0, turning age variables 
+    that recorded as a two-year range (eg.12-13) to a single numerical value by taking the midpoint of the range, and transforming 
+    variables into the same measuring units.
 
  #### results and visualization.rmd:
   - This file contains three parts:
@@ -16,7 +22,7 @@
     - The third part is summarizing the statistics, including the range, mean, and median, of each dataset into a professionally formatted 
       table for submission to the journal
 
- #### calibration_plot.rmd:
+ #### calibration_plot.R:
   - This file makes calibration plots for each dataset to evaluate the concurrence between the predicted probabilities from our model with  
     the actual probabilities of the datasets
        
