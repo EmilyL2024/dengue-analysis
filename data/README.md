@@ -1,4 +1,4 @@
-<h6>This folder contains the five publicly available datasets we used for the analysis.
+<font size=”1”> This folder contains the five publicly available datasets we used for the analysis. </font>
 
 Citation for Data Sources (order corresponds to the datasets in the folder):
 
